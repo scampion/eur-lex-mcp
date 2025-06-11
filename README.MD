@@ -19,7 +19,7 @@ By wrapping the legacy SOAP API, this server unlocks use cases in automated lega
 
 Before you begin, ensure you have the following:
 
-1.  **Python 3.10+** and the `uv` package manager. If you don't have `uv`, install it with:
+1.  **Python 3.11+** and the `uv` package manager. If you don't have `uv`, install it with:
     ```bash
     pip install uv
     ```
