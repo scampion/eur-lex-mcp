@@ -10,7 +10,7 @@ By wrapping the legacy SOAP API, this server unlocks use cases in automated lega
 ## ✨ Features
 
 *   **Dual-Mode Transport**: Runs over **STDIO** for secure, local integration with desktop applications (like Claude Desktop, Cursor) and over **HTTP** for remote access by AI agents and web services.
-*   **Expert Search Tool**: Provides an `expert_search` tool that allows for powerful, flexible querying using the native [EUR-Lex expert search syntax](https://eur-lex.europa.eu/content/tools/expert-search-syntax.html).
+*   **Expert Search Tool**: Provides an `expert_search` tool that allows for powerful, flexible querying using the native [EUR-Lex expert search syntax](https://eur-lex.europa.eu/content/help/search/expert-search.html).
 *   **Direct Document Access**: Includes a `get_document_by_celex` resource template for fetching specific legal documents directly via a clean URI (`resource://eurlex/document/{celex_number}`).
 *   **Clean, Structured Output**: Automatically parses the verbose SOAP/XML responses into a clean, easy-to-use JSON format, perfect for LLM consumption.
 *   **Easy Installation**: Can be easily installed into compatible clients using the `fastmcp` command-line tool.
