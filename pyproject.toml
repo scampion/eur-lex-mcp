@@ -57,7 +57,6 @@ known-first-party = ["eur-lex-mcp"]
 [tool.ruff.pep8-naming]
 ignore-names = ["_"]  # Allows `_` as a throwaway variable
 
-# Pyupgrade: Assume code is already running under this version
 [tool.ruff.pyupgrade]
 keep-runtime-typing = false
 

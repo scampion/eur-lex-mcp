@@ -29,13 +29,13 @@ Before you begin, ensure you have the following:
 
 Follow these steps to get the server up and running on your local machine.
 
-### 1. Clone the Repository
+### 1. Clone the Repository (This is only necessary if you want to install it to Claude Desktop with the practical `fastmcp install` command)
 
 Clone this project to your local machine.
 
 ```bash
-git clone <your-repo-url>
-cd <your-repo-name>
+git clone https://github.com/scimorph/eur-lex-mcp.git
+cd eur-lex-mcp
 ```
 
 ### 2. Set Up the Environment
@@ -94,31 +94,97 @@ fastmcp install server.py --name "EUR-LEX Search"
 
 This command will automatically detect your `server.py`, read its dependencies, and configure Claude Desktop to run it. Simply **restart Claude Desktop** and the "EUR-LEX Search" tool will be available.
 
-#### Manual Configuration (for other apps)
+#### Manual Configuration (for other apps + Claude Desktop)
 
-For other applications, you will need to manually configure them to run the `server.py` script. Find the MCP server configuration section in your application's settings and add an entry that executes the script.
-
-<details>
-<summary>Example manual JSON configuration</summary>
+For other applications (optionally for Claude Desktop), you will need to manually configure them to run the `server.py` script. Find the MCP server configuration section in your application's settings and add an entry that executes the script.
 
 ```json
 {
   "mcpServers": {
     "eurlex-search": {
-      "command": "/absolute/path/to/your/.venv/bin/python",
+      "command": "npx",
       "args": [
-        "/absolute/path/to/your/project/server.py"
-      ]
+        "-y",
+        "-p", "fastmcp",
+        "-p", "zeep",
+        "-p", "python-dotenv",
+        "fastmcp", "run", "https://scimorph/eur-lex-mcp/main/server/server.py"
+      ],
+      "env": {
+        "EURLEX_USERNAME": "YOUR_EURLEX_USERNAME",
+        "EURLEX_PASSWORD": "YOUR_WEBSERVICE_PASSWORD"
+      }
     }
   }
 }
 ```
-**Note:** You must use absolute paths for the command and script arguments.
-</details>
 
 ### Mode 2: As a Remote HTTP Service
+#### 🐳 Running with Docker (If you don't want to clone the repo)
 
-This mode is for AI agents or other web services that need to call the server over the network.
+For running the server in HTTP mode, the easiest and most portable method is to use Docker. This approach encapsulates all dependencies and requires no local Python environment setup.
+
+You will need [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed on your machine.
+
+#### Option A: Run the Pre-built Image from Docker Hub (Easiest)
+
+We provide a pre-built Docker image on Docker Hub for your convenience.
+
+**1. Create a Credentials File**
+
+On your local machine, create a file named `eurlex.env`. This file will securely store your credentials and will be passed to the container at runtime.
+
+```env
+# eurlex.env
+EURLEX_USERNAME="YOUR_EURLEX_USERNAME"
+EURLEX_PASSWORD="YOUR_WEBSERVICE_PASSWORD"
+```
+
+**2. Run the Docker Container**
+
+Execute the following command in your terminal. It will pull the image from Docker Hub and run it with your credentials.
+
+```bash
+docker run -d --name eur-lex-mcp -p 8000:8000 --env-file ./eurlex.env --rm enzofanaccount/eur-lex-mcp:latest
+```
+
+That's it! The server is now running and accessible at `http://localhost:8000`.
+
+*   `-d`: Runs the container in detached mode (in the background).
+*   `--name eurlex-mcp`: Gives the container a memorable name.
+*   `-p 8000:8000`: Maps port 8000 from the container to port 8000 on your local machine.
+*   `--env-file ./eurlex.env`: **This is how we handle credentials.** It securely injects the variables from your local `eurlex.env` file into the container's environment.
+*   `--rm`: Automatically removes the container when it stops.
+
+#### Option B: Build and Run the Image Locally
+
+If you prefer to build the image yourself:
+
+**1. Create the `Dockerfile`**
+
+Create a file named `Dockerfile` in a new directory and paste the contents from the [Dockerfile](Dockerfile) above. Make sure to update the `ADD` line with the correct URL to your `server.py` file.
+
+**2. Create the `eurlex.env` Credentials File**
+
+Create the `eurlex.env` file in the same directory as your `Dockerfile`, as described in Option A.
+
+**3. Build the Docker Image**
+
+From the directory containing your `Dockerfile` and `eurlex.env`, run:
+```bash
+docker build -t eurlex-mcp-server .
+```
+
+**4. Run Your Locally Built Image**
+
+Run the same command as before, but use the local image name:
+```bash
+docker run -d --name eur-lex-mcp -p 8000:8000 --env-file ./eurlex.env --rm eurlex-mcp-server
+```
+
+The server is now running and accessible at `http://localhost:8000`.
+
+### Alternative if you cloned the repo:
 
 Run the following command from your terminal:
 
@@ -187,7 +253,7 @@ Contributions are welcome! If you'd like to improve the server, please follow th
 
 1.  Fork the repository.
 2.  Clone the fork to your IDE.
-2.  Create a new branch for your feature (`git checkout -b feature/amazing-feature`).
+2.  Create a descriptive new branch for your feature (`git checkout -b feature/amazing-feature`).
 3.  Commit your changes (`git commit -m 'Add some amazing feature'`).
 4.  Push to the branch (`git push origin feature/amazing-feature`).
 5.  Open a Pull Request.
