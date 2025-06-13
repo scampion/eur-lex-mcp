@@ -3,7 +3,7 @@ name = "eur-lex-mcp"
 version = "0.1.0"
 description = "MCP server for the EUR-LEX web service"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastmcp>=2.8.0",
     "zeep>=4.3.1",

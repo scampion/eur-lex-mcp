@@ -85,9 +85,6 @@ You do not need to run the server manually. Instead, you "install" it into your 
 The easiest way to install the server is with the `fastmcp` CLI:
 
 ```bash
-# Ensure you have fastmcp's CLI dependencies
-uv pip install "fastmcp[cli]"
-
 # Run the install command from the project root
 fastmcp install server.py --name "EUR-LEX Search"
 ```
