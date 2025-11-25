@@ -55,19 +55,33 @@ def _format_search_results(raw_results: dict) -> list[dict]:
     """
     Parses the verbose SOAP/Zeep response into a clean list of document dictionaries.
     """
+    print(f"DEBUG: Formatting results, type: {type(raw_results)}", file=sys.stderr)
+
     if not raw_results or raw_results.get("error"):
         return [raw_results] if raw_results else []
 
     try:
-        results_list = raw_results["body"]["searchResults"]["result"]
+        # The structure is different - result is directly in the response
+        if "result" in raw_results:
+            results_list = raw_results["result"]
+        else:
+            print(f"DEBUG: Keys in raw_results: {raw_results.keys()}", file=sys.stderr)
+            return []
+
         if not isinstance(results_list, list):
             results_list = [results_list]
-    except (KeyError, TypeError):
+
+        print(f"DEBUG: Found {len(results_list)} results", file=sys.stderr)
+    except (KeyError, TypeError) as e:
+        print(f"DEBUG: Error accessing results: {e}", file=sys.stderr)
         return []
 
     formatted_docs = []
-    for item in results_list:
+    for idx, item in enumerate(results_list):
         try:
+            print(f"DEBUG: Processing item {idx}, keys: {item.keys() if isinstance(item, dict) else 'not a dict'}",
+                  file=sys.stderr)
+
             # Extract main content and links, with robust handling for missing fields
             content = item.get("content", {})
             links = item.get("document_link", [])
@@ -75,16 +89,34 @@ def _format_search_results(raw_results: dict) -> list[dict]:
                 links = [links]
 
             # Find the HTML link from the list of document manifestations
-            html_link = next((link["URL"] for link in links if link.get("TYPE") == "html"), None)
+            html_link = None
+            for link in links:
+                if isinstance(link, dict) and link.get("type") == "html":
+                    html_link = link.get("VALUE") or link.get("_value_1")
+                    break
 
-            # Safely extract CELEX and Title using .get() to avoid KeyErrors
-            celex = content.get("NOTICE", {}).get("ID_CELEX", {}).get("VALUE")
-            title = (
-                content.get("NOTICE", {})
-                .get("EXPRESSION", [{}])[0]
-                .get("EXPRESSION_TITLE", [{}])[0]
-                .get("VALUE")
-            )
+            # Navigate the nested structure to find CELEX and Title
+            notice = content.get("NOTICE", {})
+            work = notice.get("WORK", {})
+
+            # Get CELEX
+            celex_obj = work.get("ID_CELEX", {})
+            celex = celex_obj.get("VALUE") if isinstance(celex_obj, dict) else None
+
+            # Get Title from EXPRESSION
+            expressions = notice.get("EXPRESSION", [])
+            if not isinstance(expressions, list):
+                expressions = [expressions]
+
+            title = None
+            if expressions:
+                expr_titles = expressions[0].get("EXPRESSION_TITLE", [])
+                if not isinstance(expr_titles, list):
+                    expr_titles = [expr_titles]
+                if expr_titles:
+                    title = expr_titles[0].get("VALUE")
+
+            print(f"DEBUG: Extracted - CELEX: {celex}, Title: {title[:50] if title else None}", file=sys.stderr)
 
             if celex and title:
                 formatted_docs.append(
@@ -94,11 +126,14 @@ def _format_search_results(raw_results: dict) -> list[dict]:
                         "url": html_link,
                     }
                 )
-        except (KeyError, TypeError, IndexError):
+        except (KeyError, TypeError, IndexError) as e:
             # If a single item is malformed, skip it and continue
-            print(f"Skipping malformed search result item.", file=sys.stderr)
+            print(f"DEBUG: Error processing item {idx}: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             continue
 
+    print(f"DEBUG: Formatted {len(formatted_docs)} documents", file=sys.stderr)
     return formatted_docs
 
 
@@ -191,3 +226,5 @@ if __name__ == "__main__":
     else:
         print("Starting server in STDIO mode.", file=sys.stderr)
         mcp.run(transport="stdio")
+
+        
