@@ -3,7 +3,7 @@ import os
 import sys
 import argparse
 from zeep import Client as ZeepClient
-from zeep.transports import AsyncTransport
+from zeep.transports import Transport
 from zeep.wsse.username import UsernameToken
 
 from dotenv import load_dotenv
@@ -14,20 +14,22 @@ from fastmcp import FastMCP
 class EurLexClient:
     """A client for the EUR-LEX SOAP Webservice."""
 
-    WSDL_URL = "http://eur-lex.europa.eu/eurlex-ws/wsd/wsdl"
+    WSDL_URL = "https://eur-lex.europa.eu/eurlex-ws?wsdl"
 
     def __init__(self, username, password):
-        transport = AsyncTransport(None)
+        # Use synchronous Transport instead of AsyncTransport
+        transport = Transport()
         self.client = ZeepClient(
             self.WSDL_URL, transport=transport, wsse=UsernameToken(username, password)
         )
 
-    async def search(
-        self, query: str, language: str = "en", page: int = 1, page_size: int = 10
+    def search(
+            self, query: str, language: str = "en", page: int = 1, page_size: int = 10
     ) -> dict:
         """Performs an expert search on the EUR-LEX webservice."""
         try:
-            response = await self.client.service.searchRequest(
+            # Using doQuery operation (not searchRequest)
+            response = self.client.service.doQuery(
                 expertQuery=query, page=page, pageSize=page_size, searchLanguage=language
             )
             return self.client.helpers.serialize_object(response)
@@ -112,7 +114,7 @@ mcp = FastMCP(
 # --- Tool Definition ---
 @mcp.tool
 async def expert_search(
-    query: str, language: str = "en", page: int = 1, page_size: int = 10
+        query: str, language: str = "en", page: int = 1, page_size: int = 10
 ) -> list[dict]:
     """
     Performs an expert search for EU legal documents and returns a clean list of results.
@@ -120,8 +122,11 @@ async def expert_search(
     Example query: 'DN = 32024R*' to find all regulations from 2024.
     """
     print(f"Performing EUR-LEX search for query: '{query}'", file=sys.stderr)
-    raw_results = await eurlex_client.search(
-        query=query, language=language, page=page, page_size=page_size
+    # Run synchronous search in thread pool to avoid blocking
+    loop = asyncio.get_event_loop()
+    raw_results = await loop.run_in_executor(
+        None,
+        lambda: eurlex_client.search(query=query, language=language, page=page, page_size=page_size)
     )
     return _format_search_results(raw_results)
 
@@ -135,7 +140,13 @@ async def get_document_by_celex(celex_number: str) -> dict:
     print(f"Fetching document with CELEX: '{celex_number}'", file=sys.stderr)
     # The expert query syntax for an exact CELEX match is DN = '...'
     query = f"DN = '{celex_number}'"
-    raw_results = await eurlex_client.search(query=query, page_size=1)
+
+    # Run synchronous search in thread pool
+    loop = asyncio.get_event_loop()
+    raw_results = await loop.run_in_executor(
+        None,
+        lambda: eurlex_client.search(query=query, page_size=1)
+    )
 
     formatted_results = _format_search_results(raw_results)
 
