@@ -17,24 +17,37 @@ class EurLexClient:
     WSDL_URL = "https://eur-lex.europa.eu/eurlex-ws?wsdl"
 
     def __init__(self, username, password):
-        # Use synchronous Transport instead of AsyncTransport
-        transport = Transport()
+        # Use synchronous Transport with timeout
+        transport = Transport(timeout=30, operation_timeout=30)
         self.client = ZeepClient(
             self.WSDL_URL, transport=transport, wsse=UsernameToken(username, password)
         )
+        # Enable debug logging
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger('zeep').setLevel(logging.DEBUG)
 
     def search(
             self, query: str, language: str = "en", page: int = 1, page_size: int = 10
     ) -> dict:
         """Performs an expert search on the EUR-LEX webservice."""
         try:
+            print(f"Calling doQuery with: query={query}, page={page}, pageSize={page_size}, language={language}",
+                  file=sys.stderr)
+
             # Using doQuery operation (not searchRequest)
             response = self.client.service.doQuery(
                 expertQuery=query, page=page, pageSize=page_size, searchLanguage=language
             )
-            return self.client.helpers.serialize_object(response)
+
+            print(f"Response received, serializing...", file=sys.stderr)
+            result = self.client.helpers.serialize_object(response)
+            print(f"Serialized result type: {type(result)}", file=sys.stderr)
+            return result
         except Exception as e:
             print(f"An error occurred while querying EUR-LEX: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             return {"error": str(e)}
 
 

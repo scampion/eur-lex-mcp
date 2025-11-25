@@ -14,7 +14,7 @@ HEADERS = {
 }
 
 
-def send_request(method, params, session_id=None):
+def send_request(method, params, session_id=None, timeout=60):
     """Send a JSON-RPC request to the MCP server"""
     payload = {
         "jsonrpc": "2.0",
@@ -27,7 +27,9 @@ def send_request(method, params, session_id=None):
     if session_id:
         headers["Mcp-Session-Id"] = session_id
 
-    response = requests.post(SERVER_URL, json=payload, headers=headers)
+    print(f"Sending request: {method}", end="", flush=True)
+    response = requests.post(SERVER_URL, json=payload, headers=headers, timeout=timeout)
+    print(" ✓")
 
     # Handle Server-Sent Events response
     if "event:" in response.text:
@@ -79,11 +81,11 @@ def main():
             print(f"  - {resource['uri']}: {resource.get('name', 'N/A')}")
 
     # Step 4: Test a tool call (expert_search)
-    print("\n4. Testing expert_search tool with GDPR query...")
+    print("\n4. Testing expert_search tool with GDPR CELEX query...")
     tool_params = {
         "name": "expert_search",
         "arguments": {
-            "query": "data protection GDPR",
+            "query": "DN = 32016R0679",  # GDPR regulation CELEX number
             "page_size": 3,
             "page": 1
         }
@@ -112,13 +114,13 @@ def main():
     else:
         print(f"✗ Error: {result.get('error', 'Unknown error')}")
 
-    # Step 5: Test another search - EU directives on cybersecurity
-    print("\n5. Testing expert_search with cybersecurity directive query...")
+    # Step 5: Test another search - 2024 regulations
+    print("\n5. Testing expert_search with 2024 regulations query...")
     tool_params = {
         "name": "expert_search",
         "arguments": {
-            "query": "cybersecurity directive NIS2",
-            "page_size": 2
+            "query": "DN = 32024R*",  # All regulations from 2024
+            "page_size": 3
         }
     }
 
@@ -145,6 +147,10 @@ if __name__ == "__main__":
     except requests.exceptions.ConnectionError:
         print("✗ Error: Could not connect to server at http://127.0.0.1:8000/mcp")
         print("  Make sure the server is running: python server.py --transport http")
+    except requests.exceptions.Timeout:
+        print("✗ Error: Request timed out")
+        print("  The EUR-Lex service may be slow or unavailable")
+        print("  Check the server logs for more details")
     except Exception as e:
         print(f"✗ Error: {e}")
         import traceback
