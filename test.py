@@ -120,7 +120,7 @@ def main():
         "name": "expert_search",
         "arguments": {
             "query": "DN = 32024R*",  # All regulations from 2024
-            "page_size": 3
+            "page_size": 10
         }
     }
 
@@ -130,10 +130,13 @@ def main():
         print("✓ Search successful!")
         content = result["result"]["content"]
         for item in content:
-            if item["type"] == "text":
-                print(f"\n  Results preview:")
-                print(f"  {item['text'][:250]}...")
-                break
+            print(item)
+            # if item["type"] == "text":
+            #     print(f"\n  Results preview:")
+            #     #print(f"  {item['text'][:250]}...")
+            #     # pretty print item
+            #     text = item['text']
+            #     break
     else:
         print(f"✗ Error: {result.get('error', 'Unknown error')}")
 
