@@ -8,6 +8,7 @@ dependencies = [
     "fastmcp>=2.13.1",
     "zeep>=4.3.1",
     "python-dotenv>=1.1.0",
+    "beautifulsoup4>=4.14.2"
 ]
 
 [tool.ruff]

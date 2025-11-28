@@ -20,4 +20,4 @@ COPY server/server.py .
 
 EXPOSE 8000
 
-CMD ["--transport", "http", "--host", "0.0.0.0"]
+CMD ["python", "server.py", "--transport", "http", "--host", "0.0.0.0"]
