@@ -5,7 +5,7 @@ description = "MCP server for the EUR-LEX web service"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastmcp>=2.8.0",
+    "fastmcp>=2.13.1",
     "zeep>=4.3.1",
     "python-dotenv>=1.1.0",
 ]

@@ -1,3 +1,4 @@
+import re
 import asyncio
 import os
 import sys
@@ -5,6 +6,7 @@ import argparse
 import httpx
 from lxml import etree
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 from fastmcp import FastMCP
 
 # --- Main Server Logic ---
@@ -91,6 +93,9 @@ class EurLexClient:
             return {"error": "HTTP request failed", "details": e.response.text}
         except Exception as e:
             print(f"An unexpected error occurred while querying EUR-LEX: {e}", file=sys.stderr)
+            # print traceback for debugging
+            import traceback
+            traceback.print_exc()
             return {"error": str(e)}
 
     def _parse_soap_response(self, xml_content: bytes) -> dict:
@@ -114,17 +119,47 @@ class EurLexClient:
                 if titles:
                     title = titles[0]
 
-                # Find the HTML link specifically
-                html_link_node = node.find(".//sear:document_link[@type='html']", namespaces=search_ns)
-                url = html_link_node.text if html_link_node is not None else None
-
                 if celex and title:
-                    results.append({"celex": celex, "title": title.strip(), "url": url})
-            
+                    results.append({"celex": celex, "title": title.strip()})
+
             return {"results": results}
         except etree.XMLSyntaxError as e:
             print(f"Error parsing SOAP XML response: {e}", file=sys.stderr)
             return {"error": "Failed to parse SOAP response"}
+
+def _node_to_md(el):
+    parts = []
+    for child in el.children:
+        if getattr(child, "name", None) is None:
+            parts.append(str(child))
+            continue
+        tag = child.name.lower()
+        inner = _node_to_md(child).strip()
+        if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            level = int(tag[1])
+            parts.append("\n" + "#" * level + " " + inner + "\n\n")
+        elif tag == "p":
+            parts.append(inner + "\n\n")
+        elif tag in ("strong", "b"):
+            parts.append("**" + inner + "**")
+        elif tag in ("em", "i"):
+            parts.append("*" + inner + "*")
+        elif tag == "a":
+            href = child.get("href", "")
+            parts.append(f"[{inner}]({href})")
+        elif tag in ("ul", "ol"):
+            for idx, li in enumerate(child.find_all("li", recursive=False), start=1):
+                li_text = _node_to_md(li).strip()
+                if tag == "ul":
+                    parts.append(f"- {li_text}\n")
+                else:
+                    parts.append(f"{idx}. {li_text}\n")
+            parts.append("\n")
+        elif tag == "li":
+            parts.append(inner)
+        else:
+            parts.append(inner)
+    return "".join(parts)
 
 
 def _format_search_results_for_mcp(parsed_results: dict) -> list[dict]:
@@ -135,45 +170,106 @@ def _format_search_results_for_mcp(parsed_results: dict) -> list[dict]:
     if not parsed_results.get("results"):
         return [{"type": "text", "text": "No results found."}]
     
-    # Format into a readable string for the test client
-    header = f"CELEX{'':<25} | Title"
-    lines = [header, "-" * (len(header) + 20)]
+    # Format en "CELEX: XXXXX ; TITLE: abcdef..."
+    lines = []
     for item in parsed_results["results"]:
-        title_preview = item['title'][:70] + '...' if len(item['title']) > 70 else item['title']
-        lines.append(f"{item['celex']:<30} | {title_preview}")
+        celex = item.get("celex", "").strip()
+        title = item.get("title", "").strip()
+        if celex and title:
+            lines.append(f"CELEX: {celex} ; TITLE: {title}")
+        elif celex:
+            lines.append(f"CELEX: {celex}")
+        elif title:
+            lines.append(f"TITLE: {title}")
     
     return [{"type": "text", "text": "\n".join(lines)}]
+
+
+async def _get_text_from_celex_async(celex_number: str) -> str:
+    """Async version: Fetches and extracts text content from a EUR-Lex document by CELEX number."""
+    url = f"https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:{celex_number}"
+
+    # Use the existing async client from EurLexClient or create a new one
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Error fetching document {celex_number}: {e}", file=sys.stderr)
+            return ""
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+        content_node = soup.find(id="PP4Contents")
+        if content_node:
+            content_md = _node_to_md(content_node).strip()
+            content = re.sub(r"\n{3,}", "\n\n", content_md)
+
+            if "DEBUG_EURLEX" in os.environ:
+                with open(f"eurlex_{celex_number}.txt", "w", encoding="utf-8") as f:
+                    f.write(content)
+                print(f"Saved debug TXT content to eurlex_{celex_number}.txt", file=sys.stderr)
+
+            return content
+        return ""
+
 
 eurlex_client = EurLexClient(EURLEX_USERNAME, EURLEX_PASSWORD)
 
 mcp = FastMCP(
     name="EurLexMCPServer",
     instructions="A server for searching European Union law.",
-    dependencies=["httpx", "lxml", "python-dotenv"],
+    dependencies=["httpx", "lxml", "python-dotenv", "beautifulsoup4", "fastmcp"],
 )
+
+# Load the markdown content at module level
+_EXPERT_SEARCH_EXTRA_DOCS = ""
+try:
+    md_path = os.path.join(os.path.dirname(__file__), "..", "eurlex_expert_search.md")
+    with open(md_path, "r", encoding="utf-8") as _f:
+        _EXPERT_SEARCH_EXTRA_DOCS = _f.read()
+except Exception as e:
+    print(f"Warning: Could not load eurlex_expert_search.md: {e}", file=sys.stderr)
+
 
 @mcp.tool
 async def expert_search(query: str, language: str = "en", page: int = 1, page_size: int = 10) -> list[dict]:
     """
     Performs an expert search for EU legal documents.
-    Example query: 'DN = 32024R*' for all regulations from 2024.
     """
+    # Append the contents of `../eurlex_expert_search.md` to the function docstring at import/runtime.
+    try:
+        md_path = os.path.join(os.path.dirname(__file__), "..", "eurlex_expert_search.md")
+        with open(md_path, "r", encoding="utf-8") as _f:
+            extra = _f.read()
+        expert_search.__doc__ = (expert_search.__doc__ or "") + "\n\n" + extra
+    except Exception:
+        # Ignore errors reading the file
+        pass
+
+    expert_search.__doc__ += """
+    
+Example results returned by this tool, one result per line with CELEX number and title:
+Example results returned by this tool, one result per line with CELEX number and title:
+CELEX: 32024R1321R(04) ; TITLE: Corrigendum to Commission Implementing Regulation (EU) 2024/1321 of 8 May 2024 amending Implementing Regulation (EU) 2018/2067 as regards the verification of data and the accreditation of verifiers (OJ L, 2024/90300, 15.5.2024)
+CELEX: 32024R0900R(01) ; TITLE: Regulation (EU) 2024/900 of the European Parliament and of the Council of 13 March 2024 on the transparency and targeting of political advertising
+CELEX: 32024R0250R(02) ; TITLE: Berichtigung 
+    """
+
     print(f"Executing tool 'expert_search' with query: '{query}'", file=sys.stderr)
     parsed_results = await eurlex_client.search(query, language, page, page_size)
     return _format_search_results_for_mcp(parsed_results)
 
+
 @mcp.resource("resource://eurlex/document/{celex_number}")
-async def get_document_by_celex(celex_number: str) -> dict:
-    """Fetches a single EU legal document by its CELEX number."""
-    print(f"Executing resource 'get_document_by_celex' for: '{celex_number}'", file=sys.stderr)
-    query = f"DN = '{celex_number}'"
-    parsed_results = await eurlex_client.search(query, page_size=1)
-    
-    if "error" in parsed_results:
-        return {"error": parsed_results.get('details', parsed_results['error'])}
-    
-    results = parsed_results.get("results")
-    return results[0] if results else {"error": "Document not found"}
+async def get_document_by_celex(celex_number: str) -> str:
+    """Fetches a single EU legal document by its CELEX number.
+
+    Example: resource://eurlex/document/32016R0679 (GDPR)
+    """
+    content = await _get_text_from_celex_async(celex_number)
+    if not content:
+        return f"Document with CELEX number {celex_number} not found or could not be retrieved."
+    return content
 
 
 if __name__ == "__main__":
