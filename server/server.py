@@ -234,31 +234,29 @@ except Exception as e:
 @mcp.tool
 async def expert_search(query: str, language: str = "en", page: int = 1, page_size: int = 10) -> list[dict]:
     """
-    Performs an expert search for EU legal documents.
-    """
-    # Append the contents of `../eurlex_expert_search.md` to the function docstring at import/runtime.
-    try:
-        md_path = os.path.join(os.path.dirname(__file__), "..", "eurlex_expert_search.md")
-        with open(md_path, "r", encoding="utf-8") as _f:
-            extra = _f.read()
-        expert_search.__doc__ = (expert_search.__doc__ or "") + "\n\n" + extra
-    except Exception:
-        # Ignore errors reading the file
-        pass
+    Performs an expert search for EU legal documents using the EUR-Lex expert query syntax.
 
-    expert_search.__doc__ += """
-    
-Example results returned by this tool, one result per line with CELEX number and title:
-Example results returned by this tool, one result per line with CELEX number and title:
-CELEX: 32024R1321R(04) ; TITLE: Corrigendum to Commission Implementing Regulation (EU) 2024/1321 of 8 May 2024 amending Implementing Regulation (EU) 2018/2067 as regards the verification of data and the accreditation of verifiers (OJ L, 2024/90300, 15.5.2024)
-CELEX: 32024R0900R(01) ; TITLE: Regulation (EU) 2024/900 of the European Parliament and of the Council of 13 March 2024 on the transparency and targeting of political advertising
-CELEX: 32024R0250R(02) ; TITLE: Berichtigung 
+    The expert query syntax allows precise searches using field names and operators.
+    Common fields include: DN (document number/CELEX), TI (title), TE (text content), 
+    DD (document date), AU (author), etc.
+
+    Operators: AND, OR, NOT, NEAR (proximity), ~ (contains), = (exact match)
+
+    Examples:
+    - Search by CELEX: "DN = 32016R0679"
+    - Search by keyword: "TI ~ artificial intelligence"
+    - Complex search: "TE ~ GDPR AND DD >= 2020"
+    """ + "\n\n" + _EXPERT_SEARCH_EXTRA_DOCS + """
+
+    Example results returned by this tool, one result per line with CELEX number and title:
+    CELEX: 32024R1321R(04) ; TITLE: Corrigendum to Commission Implementing Regulation...
+    CELEX: 32024R0900R(01) ; TITLE: Regulation (EU) 2024/900 on transparency and targeting...
+    CELEX: 32024R0250R(02) ; TITLE: Berichtigung...
     """
 
     print(f"Executing tool 'expert_search' with query: '{query}'", file=sys.stderr)
     parsed_results = await eurlex_client.search(query, language, page, page_size)
     return _format_search_results_for_mcp(parsed_results)
-
 
 @mcp.resource("resource://eurlex/document/{celex_number}")
 async def get_document_by_celex(celex_number: str) -> str:
