@@ -1,3 +1,4 @@
+datasets
 fastmcp==2.13.1
 zeep==4.3.2
 dotenv==0.9.9
