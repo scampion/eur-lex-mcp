@@ -1,0 +1,3 @@
+FlagEmbedding
+qdrant-client 
+tqdm

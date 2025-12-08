@@ -1,4 +1,10 @@
-eval/.DS_Store
+eval/cache/
+benchmark/LEG_EN_HTML_20251130_01_00/
+benchmark/LEG_MTD_20251130_01_00/
+benchmark/eurlex.jsonl
+benchmark/eurlex_metadata.jsonl
+
+**/.DS_Store
 .idea
 .cursor/
 

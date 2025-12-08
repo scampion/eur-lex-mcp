@@ -1,6 +1,9 @@
 # EUR-Lex MCP Server Evaluation Dependencies
 # Install with: pip install -r requirements.txt
 
+sentencepiece
+sentence_transformers
+
 # Core dependencies
 requests>=2.31.0
 tqdm>=4.66.0

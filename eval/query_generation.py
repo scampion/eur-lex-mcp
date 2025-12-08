@@ -7,9 +7,11 @@ using three complementary approaches:
 - Approach B: DocT5Query for keyword-style queries
 - Approach C: Query type diversification
 """
+import hashlib
 import json
 import logging
 import os
+import pickle
 import re
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -22,6 +24,161 @@ from tqdm import tqdm
 
 from config import query_gen_config, OUTPUT_DIR, CACHE_DIR
 from corpus import Document
+
+
+class QueryCache:
+    """Cache for generated queries, keyed by model configuration and document."""
+
+    def __init__(self, cache_dir: Path = CACHE_DIR):
+        self.cache_dir = cache_dir / "query_cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._memory_cache: Dict[str, List[Dict]] = {}
+        self._index_file = self.cache_dir / "cache_index.json"
+        self._load_index()
+
+    def _load_index(self):
+        """Load cache index from disk."""
+        if self._index_file.exists():
+            try:
+                with open(self._index_file, "r") as f:
+                    self._index = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                self._index = {}
+        else:
+            self._index = {}
+
+    def _save_index(self):
+        """Save cache index to disk."""
+        with open(self._index_file, "w") as f:
+            json.dump(self._index, f, indent=2)
+
+    def _make_cache_key(self, base_url: str, model: str, celex: str, method: str) -> str:
+        """Generate cache key from configuration and document ID."""
+        key_string = f"{base_url}|{model}|{celex}|{method}"
+        return hashlib.sha256(key_string.encode()).hexdigest()[:32]
+
+    def _get_cache_file(self, cache_key: str) -> Path:
+        """Get cache file path for a key."""
+        return self.cache_dir / f"{cache_key}.pkl"
+
+    def get(
+        self, base_url: str, model: str, celex: str, method: str = "llm"
+    ) -> Optional[List[Dict]]:
+        """
+        Get cached queries for a document.
+
+        Args:
+            base_url: API base URL
+            model: Model name
+            celex: Document CELEX number
+            method: Generation method ('llm' or 't5')
+
+        Returns:
+            List of query dicts if cached, None otherwise
+        """
+        cache_key = self._make_cache_key(base_url, model, celex, method)
+
+        # Check memory cache first
+        if cache_key in self._memory_cache:
+            return self._memory_cache[cache_key]
+
+        # Check disk cache
+        cache_file = self._get_cache_file(cache_key)
+        if cache_file.exists():
+            try:
+                with open(cache_file, "rb") as f:
+                    queries = pickle.load(f)
+                self._memory_cache[cache_key] = queries
+                return queries
+            except (pickle.PickleError, IOError) as e:
+                logging.warning(f"Failed to load cache for {celex}: {e}")
+                return None
+
+        return None
+
+    def set(
+        self,
+        base_url: str,
+        model: str,
+        celex: str,
+        queries: List[Dict],
+        method: str = "llm",
+    ):
+        """
+        Cache queries for a document.
+
+        Args:
+            base_url: API base URL
+            model: Model name
+            celex: Document CELEX number
+            queries: List of query dicts to cache
+            method: Generation method ('llm' or 't5')
+        """
+        cache_key = self._make_cache_key(base_url, model, celex, method)
+
+        # Save to memory cache
+        self._memory_cache[cache_key] = queries
+
+        # Save to disk
+        cache_file = self._get_cache_file(cache_key)
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump(queries, f)
+
+            # Update index
+            self._index[cache_key] = {
+                "base_url": base_url,
+                "model": model,
+                "celex": celex,
+                "method": method,
+                "query_count": len(queries),
+            }
+            self._save_index()
+        except (pickle.PickleError, IOError) as e:
+            logging.warning(f"Failed to save cache for {celex}: {e}")
+
+    def has(self, base_url: str, model: str, celex: str, method: str = "llm") -> bool:
+        """Check if queries are cached for a document."""
+        cache_key = self._make_cache_key(base_url, model, celex, method)
+        if cache_key in self._memory_cache:
+            return True
+        return self._get_cache_file(cache_key).exists()
+
+    def get_stats(self) -> Dict:
+        """Get cache statistics."""
+        return {
+            "total_cached": len(self._index),
+            "memory_cached": len(self._memory_cache),
+            "cache_dir": str(self.cache_dir),
+        }
+
+    def clear(self, base_url: Optional[str] = None, model: Optional[str] = None):
+        """
+        Clear cache entries.
+
+        Args:
+            base_url: If provided, only clear entries for this base_url
+            model: If provided, only clear entries for this model
+        """
+        keys_to_remove = []
+        for key, info in self._index.items():
+            if base_url and info.get("base_url") != base_url:
+                continue
+            if model and info.get("model") != model:
+                continue
+            keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            cache_file = self._get_cache_file(key)
+            if cache_file.exists():
+                cache_file.unlink()
+            if key in self._memory_cache:
+                del self._memory_cache[key]
+            if key in self._index:
+                del self._index[key]
+
+        self._save_index()
+        logging.info(f"Cleared {len(keys_to_remove)} cache entries")
 
 logger = logging.getLogger(__name__)
 
@@ -366,12 +523,33 @@ class QueryFilterPipeline:
 class QueryGenerationPipeline:
     """Main pipeline orchestrating all query generation approaches."""
 
-    def __init__(self, config=query_gen_config):
+    def __init__(self, config=query_gen_config, use_cache: bool = True):
         self.config = config
         self.llm_generator = LLMQueryGenerator(config)
         self.t5_generator = DocT5QueryGenerator(config)
         self.diversifier = QueryDiversifier(config)
         self.filter_pipeline = QueryFilterPipeline(config)
+        self.use_cache = use_cache
+        self.cache = QueryCache() if use_cache else None
+
+    def _queries_to_dicts(self, queries: List[GeneratedQuery]) -> List[Dict]:
+        """Convert GeneratedQuery objects to dicts for caching."""
+        return [q.to_dict() for q in queries]
+
+    def _dicts_to_queries(self, dicts: List[Dict]) -> List[GeneratedQuery]:
+        """Convert cached dicts back to GeneratedQuery objects."""
+        return [
+            GeneratedQuery(
+                query_id=d["query_id"],
+                text=d["text"],
+                source_celex=d["source_celex"],
+                query_type=d["query_type"],
+                generation_method=d["generation_method"],
+                aspect=d.get("aspect"),
+                confidence=d.get("confidence"),
+            )
+            for d in dicts
+        ]
 
     def generate_all_queries(
         self,
@@ -379,29 +557,92 @@ class QueryGenerationPipeline:
         use_llm: bool = True,
         use_t5: bool = True,
     ) -> List[GeneratedQuery]:
-        """Generate queries using all approaches."""
+        """Generate queries using all approaches with caching support."""
         all_queries = []
+        cache_hits = 0
+        cache_misses = 0
+
+        # Get cache keys from config
+        base_url = self.config.llm_base_url
+        llm_model = self.config.llm_model
+        t5_model = self.config.doc2query_model
 
         for celex, doc in tqdm(documents.items(), desc="Generating queries"):
             doc_queries = []
 
             # Approach A: LLM-based generation
             if use_llm:
-                try:
-                    llm_queries = self.llm_generator.generate_queries(doc)
+                # Check cache first
+                cached = None
+                if self.cache:
+                    cached = self.cache.get(base_url, llm_model, celex, method="llm")
+
+                if cached is not None:
+                    # Cache hit - restore from cache
+                    llm_queries = self._dicts_to_queries(cached)
                     doc_queries.extend(llm_queries)
-                except Exception as e:
-                    logger.warning(f"LLM generation failed for {celex}: {e}")
+                    cache_hits += 1
+                else:
+                    # Cache miss - generate and cache
+                    try:
+                        llm_queries = self.llm_generator.generate_queries(doc)
+                        doc_queries.extend(llm_queries)
+                        cache_misses += 1
+
+                        # Save to cache
+                        if self.cache and llm_queries:
+                            self.cache.set(
+                                base_url,
+                                llm_model,
+                                celex,
+                                self._queries_to_dicts(llm_queries),
+                                method="llm",
+                            )
+                    except Exception as e:
+                        logger.warning(f"LLM generation failed for {celex}: {e}")
 
             # Approach B: DocT5Query
             if use_t5:
-                try:
-                    t5_queries = self.t5_generator.generate_queries(doc)
+                # Check cache first
+                cached = None
+                if self.cache:
+                    cached = self.cache.get(base_url, t5_model, celex, method="t5")
+
+                if cached is not None:
+                    # Cache hit
+                    t5_queries = self._dicts_to_queries(cached)
                     doc_queries.extend(t5_queries)
-                except Exception as e:
-                    logger.warning(f"T5 generation failed for {celex}: {e}")
+                    cache_hits += 1
+                else:
+                    # Cache miss
+                    try:
+                        t5_queries = self.t5_generator.generate_queries(doc)
+                        doc_queries.extend(t5_queries)
+                        cache_misses += 1
+
+                        # Save to cache
+                        if self.cache and t5_queries:
+                            self.cache.set(
+                                base_url,
+                                t5_model,
+                                celex,
+                                self._queries_to_dicts(t5_queries),
+                                method="t5",
+                            )
+                    except Exception as e:
+                        logger.warning(f"T5 generation failed for {celex}: {e}")
 
             all_queries.extend(doc_queries)
+
+        # Log cache statistics
+        total_requests = cache_hits + cache_misses
+        if total_requests > 0:
+            logger.info(
+                f"Cache stats: {cache_hits} hits, {cache_misses} misses "
+                f"({cache_hits / total_requests * 100:.1f}% hit rate)"
+            )
+        if self.cache:
+            logger.info(f"Cache index: {self.cache.get_stats()}")
 
         # Approach C: Diversification
         all_queries = self.diversifier.diversify_queries(all_queries)
@@ -410,6 +651,12 @@ class QueryGenerationPipeline:
         filtered_queries = self.filter_pipeline.filter_queries(all_queries, documents)
 
         return filtered_queries
+
+    def clear_cache(self, base_url: Optional[str] = None, model: Optional[str] = None):
+        """Clear the query cache."""
+        if self.cache:
+            self.cache.clear(base_url=base_url, model=model)
+            logger.info("Query cache cleared")
 
     def save_queries(
         self, queries: List[GeneratedQuery], output_path: Optional[Path] = None
