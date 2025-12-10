@@ -199,6 +199,17 @@ def sparse_to_json(lexical_weights: Dict) -> str:
     return json.dumps(filtered)
 
 
+def colbert_to_json(colbert_vecs) -> str:
+    """Convert ColBERT vectors to JSON string for storage.
+
+    ColBERT vectors are 2D arrays (num_tokens x embedding_dim).
+    Storing as JSON avoids PyArrow issues with nested arrays.
+    """
+    if colbert_vecs is None:
+        return json.dumps([])
+    return json.dumps(colbert_vecs.tolist())
+
+
 def get_checkpoint_path(output_file: Path) -> Path:
     """Get the checkpoint file path for a given output file."""
     return output_file.parent / f".{output_file.stem}_checkpoint.parquet"
@@ -212,6 +223,7 @@ def load_checkpoint(checkpoint_path: Path) -> tuple[set, List[Dict]]:
         Tuple of (processed_ids set, existing records list)
     """
     if not checkpoint_path.exists():
+        logger.info(f"No checkpoint file found at {checkpoint_path}")
         return set(), []
 
     try:
@@ -314,7 +326,8 @@ def compute_and_save_embeddings(
 
                         logger.debug(f"ColBERT shape for doc {j}: {colbert_vecs.shape}")
 
-                        record["colbert_embedding"] = colbert_vecs.tolist()
+                        # Store as JSON to avoid PyArrow nested array issues
+                        record["colbert_embedding"] = colbert_to_json(colbert_vecs)
                         record["num_tokens"] = colbert_vecs.shape[0]
 
                     # Add metadata fields

@@ -401,112 +401,112 @@ Example: Instead of "cheese transport", use "TE ~ cheese NEAR10 transport"
 Always construct queries using proper field syntax based on the documentation."""
 
 
-@mcp.tool
-async def build_eurlex_query(
-        search_type: str,
-        search_terms: str,
-        filters: dict = None
-) -> list[dict]:
-    """Helper tool to build properly formatted EUR-Lex expert search queries.
-
-    This tool helps construct valid EUR-Lex queries by providing a structured interface.
-    Use this instead of trying to write query syntax manually.
-
-    Args:
-        search_type: What to search in. Options:
-            - "text" → searches full document text (TE field)
-            - "title" → searches document titles (TI field)
-            - "celex" → finds specific document by CELEX number (DN field)
-            - "combined" → searches multiple fields
-
-        search_terms: The terms to search for. Examples:
-            - "cheese transport" → will be converted to proximity search
-            - "GDPR" → single term
-            - "data protection" → will be treated as phrase
-
-        filters: Optional dictionary with:
-            - "date_from": "YYYY-MM-DD" → documents from this date onwards
-            - "date_to": "YYYY-MM-DD" → documents up to this date
-            - "author": "Commission" | "Parliament" | "Council"
-            - "doc_type": "Regulation" | "Directive" | "Decision"
-            - "in_force": True → only documents currently in force
-
-    Returns:
-        A formatted query string ready for expert_search, plus explanation
-
-    Examples:
-        build_eurlex_query("text", "cheese transport")
-        → Returns: "TE ~ cheese NEAR10 transport"
-
-        build_eurlex_query("title", "data protection", {"date_from": "2020-01-01"})
-        → Returns: "TI ~ \"data protection\" AND DD >= 2020-01-01"
-
-        build_eurlex_query("celex", "32016R0679")
-        → Returns: "DN = 32016R0679"
-    """
-
-    query_parts = []
-
-    # Build main search part
-    if search_type == "text":
-        # Check if multiple words - use proximity
-        words = search_terms.strip().split()
-        if len(words) > 1:
-            query_parts.append(f"TE ~ {words[0]} NEAR10 {' NEAR10 '.join(words[1:])}")
-        else:
-            query_parts.append(f"TE ~ {search_terms}")
-
-    elif search_type == "title":
-        # Use phrase search for titles
-        if " " in search_terms:
-            query_parts.append(f'TI ~ "{search_terms}"')
-        else:
-            query_parts.append(f"TI ~ {search_terms}")
-
-    elif search_type == "celex":
-        query_parts.append(f"DN = {search_terms}")
-
-    elif search_type == "combined":
-        # Search in both title and text
-        if " " in search_terms:
-            query_parts.append(f'(TI ~ "{search_terms}" OR TE ~ {search_terms.split()[0]})')
-        else:
-            query_parts.append(f"(TI ~ {search_terms} OR TE ~ {search_terms})")
-
-    # Add filters
-    if filters:
-        if "date_from" in filters:
-            query_parts.append(f"DD >= {filters['date_from']}")
-        if "date_to" in filters:
-            query_parts.append(f"DD <= {filters['date_to']}")
-        if "author" in filters:
-            query_parts.append(f"AU = {filters['author']}")
-        if "doc_type" in filters:
-            query_parts.append(f"CT = {filters['doc_type']}")
-        if filters.get("in_force"):
-            query_parts.append("FM = INFORCE")
-
-    # Combine with AND
-    final_query = " AND ".join(query_parts)
-
-    explanation = f"""
-Built EUR-Lex Expert Query:
-==========================
-Query: {final_query}
-
-Explanation:
-- Search type: {search_type}
-- Terms: {search_terms}
-- Filters: {filters or 'None'}
-
-This query is now ready to use with expert_search tool.
-"""
-
-    return [
-        {"type": "text", "text": f"QUERY: {final_query}"},
-        {"type": "text", "text": explanation}
-    ]
-
+# @mcp.tool
+# async def build_eurlex_query(
+#         search_type: str,
+#         search_terms: str,
+#         filters: dict = None
+# ) -> list[dict]:
+#     """Helper tool to build properly formatted EUR-Lex expert search queries.
+#
+#     This tool helps construct valid EUR-Lex queries by providing a structured interface.
+#     Use this instead of trying to write query syntax manually.
+#
+#     Args:
+#         search_type: What to search in. Options:
+#             - "text" → searches full document text (TE field)
+#             - "title" → searches document titles (TI field)
+#             - "celex" → finds specific document by CELEX number (DN field)
+#             - "combined" → searches multiple fields
+#
+#         search_terms: The terms to search for. Examples:
+#             - "cheese transport" → will be converted to proximity search
+#             - "GDPR" → single term
+#             - "data protection" → will be treated as phrase
+#
+#         filters: Optional dictionary with:
+#             - "date_from": "YYYY-MM-DD" → documents from this date onwards
+#             - "date_to": "YYYY-MM-DD" → documents up to this date
+#             - "author": "Commission" | "Parliament" | "Council"
+#             - "doc_type": "Regulation" | "Directive" | "Decision"
+#             - "in_force": True → only documents currently in force
+#
+#     Returns:
+#         A formatted query string ready for expert_search, plus explanation
+#
+#     Examples:
+#         build_eurlex_query("text", "cheese transport")
+#         → Returns: "TE ~ cheese NEAR10 transport"
+#
+#         build_eurlex_query("title", "data protection", {"date_from": "2020-01-01"})
+#         → Returns: "TI ~ \"data protection\" AND DD >= 2020-01-01"
+#
+#         build_eurlex_query("celex", "32016R0679")
+#         → Returns: "DN = 32016R0679"
+#     """
+#
+#     query_parts = []
+#
+#     # Build main search part
+#     if search_type == "text":
+#         # Check if multiple words - use proximity
+#         words = search_terms.strip().split()
+#         if len(words) > 1:
+#             query_parts.append(f"TE ~ {words[0]} NEAR10 {' NEAR10 '.join(words[1:])}")
+#         else:
+#             query_parts.append(f"TE ~ {search_terms}")
+#
+#     elif search_type == "title":
+#         # Use phrase search for titles
+#         if " " in search_terms:
+#             query_parts.append(f'TI ~ "{search_terms}"')
+#         else:
+#             query_parts.append(f"TI ~ {search_terms}")
+#
+#     elif search_type == "celex":
+#         query_parts.append(f"DN = {search_terms}")
+#
+#     elif search_type == "combined":
+#         # Search in both title and text
+#         if " " in search_terms:
+#             query_parts.append(f'(TI ~ "{search_terms}" OR TE ~ {search_terms.split()[0]})')
+#         else:
+#             query_parts.append(f"(TI ~ {search_terms} OR TE ~ {search_terms})")
+#
+#     # Add filters
+#     if filters:
+#         if "date_from" in filters:
+#             query_parts.append(f"DD >= {filters['date_from']}")
+#         if "date_to" in filters:
+#             query_parts.append(f"DD <= {filters['date_to']}")
+#         if "author" in filters:
+#             query_parts.append(f"AU = {filters['author']}")
+#         if "doc_type" in filters:
+#             query_parts.append(f"CT = {filters['doc_type']}")
+#         if filters.get("in_force"):
+#             query_parts.append("FM = INFORCE")
+#
+#     # Combine with AND
+#     final_query = " AND ".join(query_parts)
+#
+#     explanation = f"""
+# Built EUR-Lex Expert Query:
+# ==========================
+# Query: {final_query}
+#
+# Explanation:
+# - Search type: {search_type}
+# - Terms: {search_terms}
+# - Filters: {filters or 'None'}
+#
+# This query is now ready to use with expert_search tool.
+# """
+#
+#     return [
+#         {"type": "text", "text": f"QUERY: {final_query}"},
+#         {"type": "text", "text": explanation}
+#     ]
+#
 
 @mcp.tool
 async def validate_eurlex_query(query: str) -> list[dict]:

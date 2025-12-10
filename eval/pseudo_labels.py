@@ -104,9 +104,12 @@ class PseudoLabelGenerator:
     def mcp_client(self):
         """Lazy load MCP client."""
         if self._mcp_client is None:
-            from mcp_client import MCPClient
+            from mcp_client import create_client
 
-            self._mcp_client = MCPClient()
+            # create QueryConversionLLMConfig with base_url pointing to local MCP server
+            self._mcp_client = create_client("http", base_url="http://0.0.0.0:9001/")
+
+
         return self._mcp_client
 
     async def retrieve_candidates(
@@ -114,7 +117,11 @@ class PseudoLabelGenerator:
     ) -> List[RetrievalResult]:
         """Retrieve candidate documents from MCP server."""
         try:
-            results = await self.mcp_client.search(query=query, limit=k)
+            eurlex_query = await self.mcp_client.natural_language_to_query(query, max_iterations=5)
+
+            # Then search
+            results = await self.mcp_client.search(eurlex_query, use_llm=False, limit=k)
+            #results = await self.mcp_client.search(query=query, limit=k)
             return [
                 RetrievalResult(
                     celex=doc["celex"],

@@ -183,10 +183,65 @@ class MetricsConfig:
 class MCPClientConfig:
     """MCP server client configuration."""
 
+    # Server connection (FastMCP streamable-http)
+    server_base_url: str = "http://127.0.0.1:9001"
+    timeout_seconds: int = 60
+    max_retries: int = 3
+
+    # Legacy stdio mode (for MCPClient)
     server_command: str = "python"
     server_args: List[str] = field(default_factory=lambda: ["-m", "eurlex_mcp"])
-    timeout_seconds: int = 30
-    max_retries: int = 3
+
+
+@dataclass
+class QueryConversionLLMConfig:
+    """LLM configuration for converting natural language to EUR-Lex expert queries."""
+
+    # LLM provider settings
+    llm_provider: str = "openai"  # "openai", "ollama", or "custom"
+    llm_model: str = "gpt-oss-120b"  # Model name based on provider
+    llm_model: str = "minimax-m2"  # Model name based on provider
+    llm_base_url: str = "https://api-gpt.jrc.ec.europa.eu/v1/"  # None = use default, or set custom URL
+
+    # For Ollama
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1:8b"
+
+    # Query conversion settings
+    temperature: float = 0.0
+    max_tokens: int = 200
+#
+#     # Prompt template for query conversion
+    system_prompt: str = """You are an expert at converting natural language questions into EUR-Lex expert search queries."""
+
+
+#     #
+# EUR-LEX QUERY SYNTAX RULES:
+# - Field searches: FieldName ~ SearchTerm (contains) or FieldName = ExactValue (exact match)
+# - Boolean operators: AND, OR, NOT (must be UPPERCASE)
+# - Proximity search: NEAR, NEAR5, NEAR10, NEAR20 (words within N words of each other)
+# - Wildcards: * (multiple chars), ? (single char)
+# - Phrases: Use quotes "exact phrase"
+# - Date format: YYYY-MM-DD
+#
+# KEY FIELDS:
+# - TE = Full text content (most common for searching document body)
+# - TI = Document title
+# - DN = CELEX number (document ID, e.g., 32016R0679)
+# - DD = Document date
+# - AU = Author (Commission, Parliament, Council)
+# - CT = Document type (Regulation, Directive, Decision)
+# - FM = Legal force (INFORCE, REPEALED)
+#
+# EXAMPLES:
+# - "Find regulations about GDPR" → TE ~ GDPR AND CT = Regulation
+# - "Directives about data protection from 2020" → TI ~ "data protection" AND CT = Directive AND DD >= 2020-01-01
+# - "Laws about cheese transport" → TE ~ cheese NEAR10 transport
+# - "What is regulation 2016/679?" → DN = 32016R0679
+# - "Environmental directives in force" → CT = Directive AND TE ~ environment AND FM = INFORCE
+# - "Maximum permitted levels undesirable substances feedingstuffs" → TE ~ "maximum permitted levels" NEAR10 "undesirable substances" NEAR10 feedingstuffs
+#
+# Convert the following question to EUR-Lex expert query syntax. Return ONLY the query, nothing else."""
 
 
 # Default configuration instances
@@ -197,3 +252,4 @@ llm_judge_config = LLMJudgeConfig()
 annotation_config = AnnotationConfig()
 metrics_config = MetricsConfig()
 mcp_client_config = MCPClientConfig()
+query_llm_config = QueryConversionLLMConfig()
